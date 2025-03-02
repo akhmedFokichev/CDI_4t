@@ -3,12 +3,13 @@ const int ignitionPin = 9;
 const int logTimeDelay = 1000;
 const int com3Speed = 9600;
 
+// Указываем угол установки датчика (например, 40° до ВМТ)
+const int startAngle = 40;  
+
 volatile unsigned long lastPulseTime = 0;
 volatile unsigned long rpm = 0;
 volatile unsigned long delayIgnition = 0;
-
-// 🔹 Указываем угол установки датчика (можно менять!)
-const int startAngle = 40;  // Например, датчик стоит на 40° до ВМТ
+volatile unsigned long lastInterruptTime = 0;
 
 void setup() {
   pinMode(hallSensor, INPUT_PULLUP);
@@ -23,6 +24,7 @@ void loop() {
 
   if (millis() - lastPrintTime >= logTimeDelay) {
     lastPrintTime = millis();
+
     Serial.print("RPM: ");
     Serial.print(rpm);
     Serial.print(" | УОЗ: ");
@@ -32,53 +34,58 @@ void loop() {
   }
 }
 
-void spark_old() {
-  // Подаём искру
-  digitalWrite(ignitionPin, HIGH);
-  delay(100);
-  digitalWrite(ignitionPin, LOW);
-}
-
+// 🔹 Прерывание по сигналу датчика Холла
 void fireIgnition() {
+  unsigned long currentTime = micros();
+
+  // Анти-дребезг (игнорируем слишком частые срабатывания < 250 мкс)
+  if (currentTime - lastInterruptTime < 250) return;
+  lastInterruptTime = currentTime;
+
   // Вычисляем RPM
   calcRPM();
 
-  // Получаем угол опережения в зависимости от RPM
+  // Получаем угол опережения
   int ignitionAdvance = getAdvanceAngle(rpm);
+  ignitionAdvance = constrain(ignitionAdvance, 0, startAngle);  // Ограничиваем УОЗ
 
-  // Получаем delay дял искры
+  // Рассчитываем задержку перед искрой
   delayIgnition = calcDelayIgnition(ignitionAdvance);
 
-  // Ждём нужное время перед искрой
+  // Ожидаем нужное время перед искрой
   delayMicroseconds(delayIgnition); 
 
-  // искра
+  // Вызываем искру
   spark();
 }
 
+// 🔹 Управление искрой
 void spark() {
   digitalWrite(ignitionPin, HIGH);
-  delayMicroseconds(5000);
+  delayMicroseconds(2000);  // Длительность искры (можно настраивать)
   digitalWrite(ignitionPin, LOW);
 }
 
-  // 🔹 Рассчитываем RPM
+// 🔹 Рассчитываем RPM
 void calcRPM() {
   unsigned long currentTime = micros();
   unsigned long pulseInterval = currentTime - lastPulseTime;
 
-  if (pulseInterval > 0) {
-    rpm = 60000000 / pulseInterval;  // Вычисляем RPM
+  if (pulseInterval > 1000) {  // Защита от деления на 0
+    rpm = 60000000 / pulseInterval;
   }
   lastPulseTime = currentTime;
 }
 
-  // 🔹 Рассчитываем задержку перед искрой с учётом угла датчика
+// 🔹 Рассчитываем задержку перед искрой с учётом угла датчика
 unsigned long calcDelayIgnition(int ignitionAdvance) {
-  int effectiveAdvance = startAngle - ignitionAdvance;  
-  if (effectiveAdvance < 0) effectiveAdvance = 0; // Искра не может быть позже ВМТ
-  delayIgnition = (effectiveAdvance * 1000000) / (rpm * 6); // Перевод градусов в микросекунды
-  return delayIgnition;
+  int effectiveAdvance = startAngle - ignitionAdvance;
+  if (effectiveAdvance < 0) effectiveAdvance = 0;  // Искра не может быть позже ВМТ
+
+  if (rpm > 0) {
+    return (effectiveAdvance * 1000000UL) / (rpm * 6);  // Перевод градусов в микросекунды
+  }
+  return 0;  // Если двигатель стоит, задержки нет
 }
 
 // 🔹 Функция вычисления угла опережения зажигания (подбираем под мотор)
@@ -93,5 +100,5 @@ int getAdvanceAngle(unsigned long rpm) {
   if (rpm < 8000) return map(rpm, 7000, 8000, 33, 35);
   if (rpm < 9000) return map(rpm, 8000, 9000, 35, 38);
   
-  return 38; // Максимальное значение
+  return 38; // Максимальный угол
 }

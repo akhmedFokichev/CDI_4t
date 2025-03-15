@@ -25,12 +25,11 @@ void loop() {
   if (millis() - lastPrintTime >= logTimeDelay) {
     lastPrintTime = millis();
 
-    Serial.print("RPM: ");
-    Serial.print(rpm);
-    Serial.print(" | УОЗ: ");
-    Serial.print(getAdvanceAngle(rpm));
-    Serial.print(" | Задержка: ");
-    Serial.println(delayIgnition);
+    String logMessage = "RPM: " + String(rpm) + 
+                    " | УОЗ: " + String(getAdvanceAngle(rpm)) + 
+                    " | Задержка: " + String(delayIgnition);
+
+    Serial.println(logMessage);
   }
 }
 
